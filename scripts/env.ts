@@ -7,7 +7,7 @@ dotenv.config();
 // API keys and configuration
 const config = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-  API_BASE_URL: "https://filter-backend-493914627855.us-central1.run.app",
+  API_BASE_URL: "http://localhost:3000",
 };
 
 // Verify critical configuration

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "493914627855",
+    "project_id": "pixmix-6a12e",
+    "storage_bucket": "pixmix-6a12e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:493914627855:android:e06a602407c8f6c126687a",
+        "android_client_info": {
+          "package_name": "com.filterclient.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBp_JPcbkcyX38Cyo-XK2dNcsX-AJ7jLSI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

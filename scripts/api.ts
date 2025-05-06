@@ -1,5 +1,45 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Key for storing custom server IP
+const SERVER_IP_KEY = "filter_app_server_ip";
+
+// Function to get server URL
+const getServerUrl = async (): Promise<string> => {
+  // Default URLs by platform
+  let serverUrl = "http://localhost:3000/generate"; // Default for web
+
+  if (Platform.OS === "android") {
+    // Default for Android emulator
+    serverUrl = "http://10.0.2.2:3000/generate";
+  }
+
+  try {
+    // Try to get custom server IP from AsyncStorage
+    const customServerIp = await AsyncStorage.getItem(SERVER_IP_KEY);
+    if (customServerIp) {
+      serverUrl = `http://${customServerIp}:3000/generate`;
+      console.log(`Using custom server address: ${serverUrl}`);
+    }
+  } catch (error) {
+    console.log("Could not load custom server address, using default");
+  }
+
+  return serverUrl;
+};
+
+// Function to save a custom server IP
+export const saveServerIp = async (ip: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(SERVER_IP_KEY, ip);
+    console.log(`Saved custom server IP: ${ip}`);
+  } catch (error) {
+    console.error("Failed to save custom server IP", error);
+    throw new Error("Failed to save server settings");
+  }
+};
+
 export const generateImage = async (
   imageUri: string,
   filter: string,
@@ -15,25 +55,10 @@ export const generateImage = async (
     // Create form data for the API request
     const formData = new FormData();
 
-    // Get the server URL based on platform and environment
-    let serverUrl =
-      "https://filter-backend-493914627855.us-central1.run.app/generate"; // Default for web
+    // Get the server URL based on platform and environment or from storage
+    const serverUrl = await getServerUrl();
 
-    if (Platform.OS === "android" || Platform.OS === "ios") {
-      // For Expo development
-      const debuggerHost =
-        Constants.expoConfig?.hostUri ||
-        (Constants.manifest as any)?.debuggerHost ||
-        Constants.manifest2?.extra?.expoGo?.debuggerHost;
-
-      if (debuggerHost) {
-        const hostWithoutPort = debuggerHost.split(":")[0];
-        serverUrl = `http://${hostWithoutPort}:3000/generate`;
-      } else if (Platform.OS === "android") {
-        serverUrl = "http://10.0.2.2:3000/generate";
-      }
-    }
-
+    // Log server URL for debugging
     console.log(`Using server URL: ${serverUrl}`);
 
     // Handle image data
@@ -59,8 +84,12 @@ export const generateImage = async (
         }
       }
 
+      // For Android, ensure the correct file format
       formData.append("image", {
-        uri: imageUri,
+        uri:
+          Platform.OS === "android"
+            ? imageUri
+            : imageUri.replace("file://", ""),
         name: fileName,
         type: fileType,
       } as any);
@@ -75,41 +104,58 @@ export const generateImage = async (
       console.log("Added FCM token to request");
     }
 
-    // Send the request
+    // Send the request with timeout
     console.log("Sending request to API server...");
-    const apiResponse = await fetch(serverUrl, {
-      method: "POST",
-      body: formData,
-      headers: {
-        Accept: "application/json",
-      },
-      // credentials: "include",
-      mode: "cors",
-    });
 
-    // Handle response
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      console.error("API error response:", errorText);
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      try {
-        const errorData = JSON.parse(errorText);
+    try {
+      const apiResponse = await fetch(serverUrl, {
+        method: "POST",
+        body: formData,
+        headers: {
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // Handle response
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
+        console.error("API error response:", errorText);
+
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(
+            errorData.message || `API error: ${apiResponse.status}`
+          );
+        } catch (e) {
+          throw new Error(
+            `API error: ${apiResponse.status}. Response: ${errorText.substring(
+              0,
+              100
+            )}`
+          );
+        }
+      }
+
+      // Parse and return the result
+      const data = await apiResponse.json();
+      return data.imageUrl;
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+
+      if (fetchError.name === "AbortError") {
         throw new Error(
-          errorData.message || `API error: ${apiResponse.status}`
-        );
-      } catch (e) {
-        throw new Error(
-          `API error: ${apiResponse.status}. Response: ${errorText.substring(
-            0,
-            100
-          )}`
+          "Request timed out. The server may be down or unreachable."
         );
       }
+      throw fetchError;
     }
-
-    // Parse and return the result
-    const data = await apiResponse.json();
-    return data.imageUrl;
   } catch (error: any) {
     console.error("Image processing error:", error);
 
@@ -117,7 +163,7 @@ export const generateImage = async (
     if (error.message) {
       if (error.message.includes("Network request failed")) {
         errorMsg =
-          "Network error. Please check your connection and ensure the server is running.";
+          "Network error. Please check your connection and ensure the server is running at the correct address.";
       } else {
         errorMsg = error.message;
       }

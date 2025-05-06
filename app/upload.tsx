@@ -145,27 +145,42 @@ export default function UploadScreen() {
     setLoadingMessage("Uploading image...");
 
     try {
-      // Get FCM token for notification
-      const fcmToken = await getFCMToken();
+      // Get FCM token for notification - only attempt for native platforms
+      let fcmToken = null;
+      if (Platform.OS !== "web") {
+        try {
+          fcmToken = await getFCMToken();
+        } catch (error) {
+          console.log(
+            "Could not get FCM token, continuing without notifications"
+          );
+        }
+      }
 
-      // Show processing notification with basic options
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `AI Filter: ${filter}`,
-          body: `Processing your image with the ${filter} filter. This may take a moment...`,
-          data: {
-            notificationType: "processing",
-            filterType: filter,
-          },
-        },
-        trigger: null,
-      });
+      // Show processing notification with basic options - only for native platforms
+      if (Platform.OS !== "web") {
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `AI Filter: ${filter}`,
+              body: `Processing your image with the ${filter} filter. This may take a moment...`,
+              data: {
+                notificationType: "processing",
+                filterType: filter,
+              },
+            },
+            trigger: null,
+          });
+        } catch (error) {
+          console.log("Could not schedule notification, continuing without it");
+        }
+      }
 
       // Log the filter being applied
       console.log(`Applying ${filter} filter to image...`);
       setLoadingMessage(`Applying ${filter} filter effect...`);
 
-      // Process the image with the selected filter - now including FCM token
+      // Process the image with the selected filter
       const result = await generateImage(
         imageUri,
         String(filter),
@@ -182,15 +197,29 @@ export default function UploadScreen() {
       let errorMessage = "Failed to process image. Please try again.";
 
       if (error.message) {
-        if (error.message.includes("fetch")) {
+        if (
+          error.message.includes("fetch") ||
+          error.message.includes("Network")
+        ) {
           errorMessage =
-            "Could not connect to the server. Make sure the server is running.";
+            "Network error: Could not connect to the server. Please check that:\n\n" +
+            "1. The server is running\n" +
+            "2. Your phone is connected to the same network as the server\n" +
+            "3. You are using the correct server address";
+        } else if (error.message.includes("timeout")) {
+          errorMessage =
+            "Request timed out. The server may be slow or unreachable. Please try again or check your server.";
         } else {
           errorMessage = error.message;
         }
       }
 
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Connection Error", errorMessage, [
+        {
+          text: "OK",
+          onPress: () => setLoading(false),
+        },
+      ]);
     } finally {
       setLoading(false);
     }
