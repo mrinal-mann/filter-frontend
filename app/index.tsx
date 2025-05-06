@@ -1,10 +1,10 @@
 // app/index.tsx
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-// import {
-//   setupNotifications,
-//   requestFCMPermissions,
-// } from "@/utils/notificationHelper";
+import {
+  setupNotifications,
+  requestFCMPermissions,
+} from "@/utils/notificationHelper";
 import { useEffect } from "react";
 
 const filters = ["Ghibli", "Pixar", "Sketch", "Cyberpunk"];
@@ -13,21 +13,21 @@ export default function HomeScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    // async function initializeNotifications() {
-    //   try {
-    //     console.log("Setting up notifications...");
-    //     await setupNotifications();
-    //     // Request permissions on app start
-    //     const granted = await requestFCMPermissions();
-    //     console.log(
-    //       "Notification permission status:",
-    //       granted ? "Granted" : "Denied"
-    //     );
-    //   } catch (error) {
-    //     console.error("Error initializing notifications:", error);
-    //   }
-    // }
-    // initializeNotifications();
+    async function initializeNotifications() {
+      try {
+        console.log("Setting up notifications...");
+        await setupNotifications();
+        // Request permissions on app start
+        const granted = await requestFCMPermissions();
+        console.log(
+          "Notification permission status:",
+          granted ? "Granted" : "Denied"
+        );
+      } catch (error) {
+        console.error("Error initializing notifications:", error);
+      }
+    }
+    initializeNotifications();
   }, []);
 
   return (

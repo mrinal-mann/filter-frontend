@@ -14,14 +14,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState, useEffect, useRef } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { generateImage } from "@/scripts/api";
-// import * as Notifications from "expo-notifications";
-// import {
-//   setupNotifications,
-//   showLocalNotification,
-//   requestFCMPermissions,
-//   getFCMToken,
-//   getNotificationData,
-// } from "@/utils/notificationHelper";
+import * as Notifications from "expo-notifications";
+import {
+  setupNotifications,
+  showLocalNotification,
+  requestFCMPermissions,
+  getFCMToken,
+  getNotificationData,
+} from "@/utils/notificationHelper";
 
 export default function UploadScreen() {
   const { filter } = useLocalSearchParams();
@@ -32,75 +32,75 @@ export default function UploadScreen() {
   const [hasPermission, setHasPermission] = useState(false);
 
   // Reference to response listener
-  // const notificationResponseRef = useRef<Notifications.Subscription>();
+  const notificationResponseRef = useRef<Notifications.Subscription>();
 
   // Set up notifications and response listener
   useEffect(() => {
     // Set up notifications when component mounts
-    // const initializeNotifications = async () => {
-    //   try {
-    //     await setupNotifications();
-    //     const granted = await requestFCMPermissions();
-    //     setHasPermission(granted);
-    //   } catch (error) {
-    //     console.error("Error initializing notifications:", error);
-    //   }
-    // };
+    const initializeNotifications = async () => {
+      try {
+        await setupNotifications();
+        const granted = await requestFCMPermissions();
+        setHasPermission(granted);
+      } catch (error) {
+        console.error("Error initializing notifications:", error);
+      }
+    };
 
-    // initializeNotifications();
+    initializeNotifications();
 
     // This listener is fired whenever a user taps on a notification
-    // notificationResponseRef.current =
-    //   Notifications.addNotificationResponseReceivedListener((response) => {
-    //     try {
-    //       console.log("Notification tapped:", response);
+    notificationResponseRef.current =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        try {
+          console.log("Notification tapped:", response);
 
-    //       // Get data from notification
-    //       const data = response.notification.request.content.data;
+          // Get data from notification
+          const data = response.notification.request.content.data;
 
-    //       // Check if we have a dataKey (for stored image URL)
-    //       if (data?.dataKey) {
-    //         // Retrieve the stored data using the key
-    //         const storedData = getNotificationData(data.dataKey);
-    //         if (storedData?.imageUrl) {
-    //           // Navigate to result screen when notification is tapped
-    //           router.push({
-    //             pathname: "/result",
-    //             params: { imageUrl: storedData.imageUrl },
-    //           });
-    //           return;
-    //         }
-    //       }
+          // Check if we have a dataKey (for stored image URL)
+          if (data?.dataKey) {
+            // Retrieve the stored data using the key
+            const storedData = getNotificationData(data.dataKey);
+            if (storedData?.imageUrl) {
+              // Navigate to result screen when notification is tapped
+              router.push({
+                pathname: "/result",
+                params: { imageUrl: storedData.imageUrl },
+              });
+              return;
+            }
+          }
 
-    //       // For other notification types, just navigate to home
-    //       if (data?.notificationType === "image_ready" && !data?.dataKey) {
-    //         router.push("/");
-    //       }
-    //     } catch (error) {
-    //       console.error("Error handling notification tap:", error);
-    //     }
-    //   });
+          // For other notification types, just navigate to home
+          if (data?.notificationType === "image_ready" && !data?.dataKey) {
+            router.push("/");
+          }
+        } catch (error) {
+          console.error("Error handling notification tap:", error);
+        }
+      });
 
     // Check initial permission status
-    // async function checkPermissions() {
-    //   try {
-    //     const result = await requestFCMPermissions();
-    //     setHasPermission(result);
-    //   } catch (error) {
-    //     console.error("Error checking permissions:", error);
-    //   }
-    // }
-    // checkPermissions();
+    async function checkPermissions() {
+      try {
+        const result = await requestFCMPermissions();
+        setHasPermission(result);
+      } catch (error) {
+        console.error("Error checking permissions:", error);
+      }
+    }
+    checkPermissions();
 
     // Cleanup
     return () => {
-      // if (notificationResponseRef.current) {
-      //   Notifications.removeNotificationSubscription(
-      //     notificationResponseRef.current
-      //   );
-      // }
+      if (notificationResponseRef.current) {
+        Notifications.removeNotificationSubscription(
+          notificationResponseRef.current
+        );
+      }
     };
-  }, [router]);
+  }, []);
 
   const pickImage = async () => {
     try {
@@ -128,12 +128,6 @@ export default function UploadScreen() {
         console.log(`Selected image: ${uri}`);
         console.log(`Image type: ${uri.split(".").pop()}`);
         setImageUri(uri);
-
-        // If we don't have notification permissions yet, request them now
-        // if (!hasPermission) {
-        //   const granted = await requestFCMPermissions();
-        //   setHasPermission(granted);
-        // }
       }
     } catch (error) {
       console.error("Error picking image:", error);
@@ -152,27 +146,31 @@ export default function UploadScreen() {
 
     try {
       // Get FCM token for notification
-      // const fcmToken = await getFCMToken();
+      const fcmToken = await getFCMToken();
 
       // Show processing notification with basic options
-      // await Notifications.scheduleNotificationAsync({
-      //   content: {
-      //     title: `AI Filter: ${filter}`,
-      //     body: `Processing your image with the ${filter} filter. This may take a moment...`,
-      //     data: {
-      //       notificationType: "processing",
-      //       filterType: filter,
-      //     }
-      //   },
-      //   trigger: null
-      // });
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `AI Filter: ${filter}`,
+          body: `Processing your image with the ${filter} filter. This may take a moment...`,
+          data: {
+            notificationType: "processing",
+            filterType: filter,
+          },
+        },
+        trigger: null,
+      });
 
       // Log the filter being applied
       console.log(`Applying ${filter} filter to image...`);
       setLoadingMessage(`Applying ${filter} filter effect...`);
 
       // Process the image with the selected filter - now including FCM token
-      const result = await generateImage(imageUri, String(filter), undefined);
+      const result = await generateImage(
+        imageUri,
+        String(filter),
+        fcmToken || undefined
+      );
 
       // Navigate to results screen
       setLoadingMessage("Success! Redirecting to results...");
@@ -220,7 +218,7 @@ export default function UploadScreen() {
               <Image source={{ uri: imageUri }} style={styles.previewImage} />
               <Button title="Apply Filter" onPress={processImage} />
 
-              {/* {!hasPermission && (
+              {!hasPermission && (
                 <TouchableOpacity
                   style={styles.notificationButton}
                   onPress={async () => {
@@ -232,7 +230,7 @@ export default function UploadScreen() {
                     Enable Notifications
                   </Text>
                 </TouchableOpacity>
-              )} */}
+              )}
             </View>
           ) : (
             <View style={styles.placeholderContainer}>
@@ -317,13 +315,13 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "center",
   },
-  // notificationButton: {
-  //   marginTop: 10,
-  //   padding: 10,
-  //   backgroundColor: "#f0f0f0",
-  //   borderRadius: 5,
-  // },
-  // notificationButtonText: {
-  //   color: "#0000ff",
-  // },
+  notificationButton: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 5,
+  },
+  notificationButtonText: {
+    color: "#0000ff",
+  },
 });

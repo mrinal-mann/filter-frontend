@@ -83,7 +83,7 @@ export const generateImage = async (
       headers: {
         Accept: "application/json",
       },
-      credentials: "include",
+      // credentials: "include",
       mode: "cors",
     });
 
