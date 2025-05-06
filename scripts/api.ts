@@ -8,11 +8,11 @@ const SERVER_IP_KEY = "filter_app_server_ip";
 // Function to get server URL
 const getServerUrl = async (): Promise<string> => {
   // Default URLs by platform
-  let serverUrl = "http://localhost:3000/generate"; // Default for web
+  let serverUrl = "http://192.168.0.107:3000/generate"; // Default for web
 
   if (Platform.OS === "android") {
     // Default for Android emulator
-    serverUrl = "http://10.0.2.2:3000/generate";
+    serverUrl = "http://192.168.0.107:3000/generate";
   }
 
   try {
@@ -109,7 +109,7 @@ export const generateImage = async (
 
     // Create AbortController for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 100 second timeout
 
     try {
       const apiResponse = await fetch(serverUrl, {
@@ -117,7 +117,9 @@ export const generateImage = async (
         body: formData,
         headers: {
           Accept: "application/json",
+          Authorization: `Bearer ${serviceAccountToken}`, // Use the token from your service account
         },
+        mode: "cors",
         signal: controller.signal,
       });
 
