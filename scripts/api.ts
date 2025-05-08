@@ -1,35 +1,39 @@
-import Constants from "expo-constants";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getCachedCloudRunToken } from "../services/authService";
 
 // Key for storing custom server IP
 const SERVER_IP_KEY = "filter_app_server_ip";
 
+// URLs for deployed Cloud Run service
+const CLOUD_RUN_URL =
+  "https://filter-backend-493914627855.us-central1.run.app/generate";
+
 // Function to get server URL
-const getServerUrl = async (): Promise<string> => {
-  // Default URLs by platform
-  let serverUrl = "http://192.168.0.107:3000/generate"; // Default for web
+export const getServerUrl = async (): Promise<string> => {
+  // Default URL is the Cloud Run service
+  let serverUrl = CLOUD_RUN_URL;
 
-  if (Platform.OS === "android") {
-    // Default for Android emulator
-    serverUrl = "http://192.168.0.107:3000/generate";
-  }
-
-  try {
-    // Try to get custom server IP from AsyncStorage
-    const customServerIp = await AsyncStorage.getItem(SERVER_IP_KEY);
-    if (customServerIp) {
-      serverUrl = `http://${customServerIp}:3000/generate`;
-      console.log(`Using custom server address: ${serverUrl}`);
+  // For development, allow using a custom server IP
+  if (__DEV__) {
+    try {
+      // Try to get custom server IP from AsyncStorage
+      const customServerIp = await AsyncStorage.getItem(SERVER_IP_KEY);
+      if (customServerIp) {
+        serverUrl = `http://${customServerIp}:3000/generate`;
+        console.log(`Using custom development server: ${serverUrl}`);
+        return serverUrl;
+      }
+    } catch (error) {
+      console.log("Could not load custom server address");
     }
-  } catch (error) {
-    console.log("Could not load custom server address, using default");
   }
 
+  console.log(`Using server URL: ${serverUrl}`);
   return serverUrl;
 };
 
-// Function to save a custom server IP
+// Function to save a custom server IP (for development)
 export const saveServerIp = async (ip: string): Promise<void> => {
   try {
     await AsyncStorage.setItem(SERVER_IP_KEY, ip);
@@ -40,10 +44,13 @@ export const saveServerIp = async (ip: string): Promise<void> => {
   }
 };
 
+/**
+ * Main function to generate an image using the server API
+ */
 export const generateImage = async (
   imageUri: string,
   filter: string,
-  fcmToken?: string // Add parameter for FCM token
+  fcmToken?: string
 ): Promise<string> => {
   try {
     console.log(`Processing image with filter: ${filter}`);
@@ -52,16 +59,17 @@ export const generateImage = async (
       throw new Error("No image selected");
     }
 
+    // Get authentication token from our auth service
+    const authToken = await getCachedCloudRunToken();
+    console.log("Got authentication token for request");
+
     // Create form data for the API request
     const formData = new FormData();
 
-    // Get the server URL based on platform and environment or from storage
+    // Get the server URL
     const serverUrl = await getServerUrl();
 
-    // Log server URL for debugging
-    console.log(`Using server URL: ${serverUrl}`);
-
-    // Handle image data
+    // Handle image data differently based on platform
     if (
       typeof window !== "undefined" &&
       !/^file:/.test(imageUri) &&
@@ -109,7 +117,7 @@ export const generateImage = async (
 
     // Create AbortController for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 100 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
     try {
       const apiResponse = await fetch(serverUrl, {
@@ -117,7 +125,7 @@ export const generateImage = async (
         body: formData,
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${serviceAccountToken}`, // Use the token from your service account
+          Authorization: `Bearer ${authToken}`, // Use the token from auth service
         },
         mode: "cors",
         signal: controller.signal,
@@ -172,5 +180,49 @@ export const generateImage = async (
     }
 
     throw new Error(errorMsg);
+  }
+};
+
+/**
+ * Helper function to test the server connection
+ */
+export const testServerConnection = async (): Promise<boolean> => {
+  try {
+    const serverUrl = await getServerUrl();
+    const healthUrl = serverUrl.replace("/generate", "/health");
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+    try {
+      const response = await fetch(healthUrl, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        console.log("Server connection test successful");
+        return true;
+      } else {
+        console.error("Server connection test failed:", response.status);
+        return false;
+      }
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+
+      if (fetchError.name === "AbortError") {
+        console.error("Server connection test timed out");
+      }
+      return false;
+    }
+  } catch (error) {
+    console.error("Server connection test error:", error);
+    return false;
   }
 };

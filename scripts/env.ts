@@ -7,7 +7,8 @@ dotenv.config();
 // API keys and configuration
 const config = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-  API_BASE_URL: "http://localhost:3000",
+  API_BASE_URL: process.env.MAIN_SERVICE_URL || "",
+  AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || "",
 };
 
 // Verify critical configuration
