@@ -1,20 +1,56 @@
 /**
  * Notification Helper
- * Handles FCM token registration and notification setup
+ * Central place for handling FCM notifications in the mobile app
  */
 import * as Notifications from "expo-notifications";
 import messaging from "@react-native-firebase/messaging";
 import { Platform } from "react-native";
 import * as Device from "expo-device";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getCachedCloudRunToken } from "../services/authService";
 
 // Storage keys
 const NOTIFICATION_DATA_PREFIX = "notification_data_";
+const FCM_TOKEN_KEY = "fcm_token";
 
-// Android notification channels
-export const createNotificationChannels = async (): Promise<void> => {
+/**
+ * Sets up notification handler for the app
+ * Should be called once during app initialization
+ */
+export async function setupNotifications(): Promise<boolean> {
+  try {
+    // Create notification channels for Android
+    if (Platform.OS === "android") {
+      await createNotificationChannels();
+    }
+
+    // Set up handlers
+    setupNotificationHandlers();
+    setupBackgroundHandler();
+
+    // Request permissions and register token with backend
+    const hasPermission = await requestFCMPermissions();
+    
+    if (hasPermission) {
+      const token = await getFCMToken();
+      if (token) {
+        await registerDeviceWithBackend(token);
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("Error setting up notifications:", error);
+    return false;
+  }
+}
+
+/**
+ * Creates Android notification channels
+ */
+export async function createNotificationChannels(): Promise<void> {
   if (Platform.OS === "android") {
+    // Main notification channel for image processing results
     await Notifications.setNotificationChannelAsync("image-processing", {
       name: "Image Processing",
       description: "Notifications for image processing status and results",
@@ -28,10 +64,11 @@ export const createNotificationChannels = async (): Promise<void> => {
       showBadge: true,
     });
 
+    // Secondary channel for status updates (less intrusive)
     await Notifications.setNotificationChannelAsync("status-updates", {
       name: "Status Updates",
       description: "Updates about image processing progress",
-      importance: Notifications.AndroidImportance.DEFAULT, // Less intrusive
+      importance: Notifications.AndroidImportance.DEFAULT,
       vibrationPattern: [0, 100],
       enableLights: false,
       enableVibrate: true,
@@ -39,10 +76,12 @@ export const createNotificationChannels = async (): Promise<void> => {
       showBadge: false,
     });
   }
-};
+}
 
-// Set up notification handler
-export const setupNotificationHandlers = (): void => {
+/**
+ * Configure notification handling
+ */
+export function setupNotificationHandlers(): void {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -50,15 +89,18 @@ export const setupNotificationHandlers = (): void => {
       shouldSetBadge: true,
     }),
   });
-};
+}
 
-// Set up Firebase background message handler
-export const setupBackgroundHandler = (): void => {
+/**
+ * Set up background message handler
+ */
+export function setupBackgroundHandler(): void {
   if (Platform.OS === "web") return;
 
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
     console.log("Message handled in the background:", remoteMessage);
 
+    // Store image URL for image_ready notifications
     if (
       remoteMessage.data?.notificationType === "image_ready" &&
       remoteMessage.data?.imageUrl
@@ -68,11 +110,11 @@ export const setupBackgroundHandler = (): void => {
         imageUrl: remoteMessage.data.imageUrl,
       });
 
+      // Show a local notification that the user can tap
       await Notifications.scheduleNotificationAsync({
         content: {
           title: remoteMessage.notification?.title || "Image Ready!",
-          body:
-            remoteMessage.notification?.body ||
+          body: remoteMessage.notification?.body ||
             "Your filtered image is ready. Tap to view.",
           data: { dataKey },
           ...(Platform.OS === "android"
@@ -83,74 +125,83 @@ export const setupBackgroundHandler = (): void => {
       });
     }
   });
-};
+}
 
-// Request FCM permissions
-export const requestFCMPermissions = async (): Promise<boolean> => {
+/**
+ * Request notification permissions
+ */
+export async function requestFCMPermissions(): Promise<boolean> {
   if (Platform.OS === "web") return false;
   if (!Device.isDevice) return false;
 
   try {
     const authStatus = await messaging().requestPermission();
-    const enabled =
+    return (
       authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-    return enabled;
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL
+    );
   } catch (error) {
     console.error("Error requesting FCM permissions:", error);
     return false;
   }
-};
+}
 
-// Get FCM token
-export const getFCMToken = async (): Promise<string | null> => {
+/**
+ * Get the FCM token for this device
+ */
+export async function getFCMToken(): Promise<string | null> {
   if (Platform.OS === "web") return null;
 
   try {
-    const token = await messaging().getToken();
-    return token;
+    // Use Expo's getDevicePushTokenAsync instead of Firebase messaging
+    const deviceToken = await Notifications.getDevicePushTokenAsync();
+    
+    // Cache the token
+    if (deviceToken.data) {
+      await AsyncStorage.setItem(FCM_TOKEN_KEY, deviceToken.data);
+    }
+    
+    return deviceToken.data;
   } catch (error) {
     console.error("Error getting FCM token:", error);
     return null;
   }
-};
+}
 
-// Register device with backend
-export const registerDeviceWithBackend = async (): Promise<boolean> => {
+/**
+ * Register device token with backend
+ */
+export async function registerDeviceWithBackend(fcmToken: string): Promise<boolean> {
   try {
-    // Get device token using Expo's API
-    const deviceToken = await getFCMToken();
-    if (!deviceToken) return false;
-
-    // Get auth token
-    const authToken = await getCachedCloudRunToken();
-
-    // Send to backend
     const response = await fetch(
       "https://filter-backend-493914627855.us-central1.run.app/register-device",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
-          deviceToken,
+          deviceToken: fcmToken,
           platform: Platform.OS,
         }),
       }
     );
 
-    if (!response.ok) throw new Error("Failed to register device");
+    if (!response.ok) {
+      throw new Error("Failed to register device");
+    }
+    
     return true;
   } catch (error) {
     console.error("Error registering device:", error);
     return false;
   }
-};
+}
 
-// Store notification data for later retrieval
-export const storeNotificationData = (key: string, data: any): string => {
+/**
+ * Store notification data for later retrieval
+ */
+export function storeNotificationData(key: string, data: any): string {
   const storageKey = `${NOTIFICATION_DATA_PREFIX}${key}`;
   try {
     AsyncStorage.setItem(storageKey, JSON.stringify(data));
@@ -158,10 +209,12 @@ export const storeNotificationData = (key: string, data: any): string => {
     console.error("Error storing notification data:", error);
   }
   return key;
-};
+}
 
-// Get stored notification data
-export const getNotificationData = async (key: string): Promise<any> => {
+/**
+ * Get stored notification data
+ */
+export async function getNotificationData(key: string): Promise<any> {
   const storageKey = `${NOTIFICATION_DATA_PREFIX}${key}`;
   try {
     const data = await AsyncStorage.getItem(storageKey);
@@ -170,28 +223,29 @@ export const getNotificationData = async (key: string): Promise<any> => {
     console.error("Error retrieving notification data:", error);
     return null;
   }
-};
+}
 
-// Complete notification setup
-export const setupNotifications = async (): Promise<boolean> => {
+/**
+ * Show a local notification
+ */
+export async function showLocalNotification(
+  title: string,
+  body: string,
+  data: any = {}
+): Promise<boolean> {
   try {
-    // Create channels
-    await createNotificationChannels();
-
-    // Set up handlers
-    setupNotificationHandlers();
-    setupBackgroundHandler();
-
-    // Request permissions
-    const hasPermission = await requestFCMPermissions();
-    if (hasPermission) {
-      // Register with backend
-      await registerDeviceWithBackend();
-    }
-
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data,
+        ...(Platform.OS === "android" ? { channelId: "status-updates" } : {}),
+      },
+      trigger: null,
+    });
     return true;
   } catch (error) {
-    console.error("Error setting up notifications:", error);
+    console.error("Error showing notification:", error);
     return false;
   }
-};
+}
