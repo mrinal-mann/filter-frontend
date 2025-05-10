@@ -25,6 +25,7 @@ import {
 } from "@/utils/notificationHelper";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { initializeFirebase } from "@/utils/firebaseInit";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -39,6 +40,33 @@ export default function RootLayout() {
 
   // Setup notification handling
   useEffect(() => {
+    async function setupApp() {
+      // Initialize Firebase (only on native platforms)
+      if (Platform.OS !== "web") {
+        await initializeFirebase();
+      }
+
+      // Create notification channels early
+      if (Platform.OS === "android") {
+        await createNotificationChannels();
+      }
+
+      // Then set up notifications
+      await setupNotifications();
+
+      // Request permissions if on a native platform
+      if (Platform.OS !== "web") {
+        const hasPermission = await requestFCMPermissions();
+        if (hasPermission) {
+          const token = await getFCMToken();
+          if (token) {
+            console.log("Device registered with FCM token");
+          }
+        }
+      }
+    }
+
+    setupApp();
     async function setupNotifications() {
       try {
         // Set up notification handlers for Expo notifications

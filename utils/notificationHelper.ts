@@ -7,19 +7,27 @@ import { Platform } from "react-native";
 // Store for notification data (image URLs, etc)
 const notificationData: Record<string, any> = {};
 
+// Configured flag to prevent multiple initializations
+let isConfigured = false;
+
 // Setup notifications - call this early in your app startup
-export const setupNotifications = async () => {
+export const setupNotifications = async (): Promise<boolean> => {
+  if (isConfigured) return true;
+
   try {
+    if (Platform.OS === "web") {
+      console.log("FCM not supported on web platform");
+      return false;
+    }
+
     // Configure how notifications appear when the app is in foreground
     setupNotificationHandlers();
 
-    // Return previously granted permissions, if any
-    const authStatus = await messaging().hasPermission();
-    const enabled =
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    // Create notification channels for Android
+    await createNotificationChannels();
 
-    return enabled;
+    isConfigured = true;
+    return true;
   } catch (error) {
     console.error("Error setting up notifications:", error);
     return false;
@@ -27,7 +35,11 @@ export const setupNotifications = async () => {
 };
 
 // Request FCM permissions
-export const requestFCMPermissions = async () => {
+export const requestFCMPermissions = async (): Promise<boolean> => {
+  if (Platform.OS === "web") {
+    return false;
+  }
+
   if (!Device.isDevice) {
     console.log("Cannot request notifications on simulator/emulator");
     return false;
@@ -48,10 +60,25 @@ export const requestFCMPermissions = async () => {
 };
 
 // Get FCM token for this device
-export const getFCMToken = async () => {
+export const getFCMToken = async (): Promise<string | null> => {
+  if (Platform.OS === "web") {
+    return null;
+  }
+
   try {
+    // Check permissions first
+    const authStatus = await messaging().hasPermission();
+    const enabled =
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+    if (!enabled) {
+      console.log("No FCM permissions to get token");
+      return null;
+    }
+
     const token = await messaging().getToken();
-    console.log("FCM Token:", token);
+    console.log("FCM Token:", token.substring(0, 10) + "...");
     return token;
   } catch (error) {
     console.error("Error getting FCM token:", error);
@@ -60,7 +87,11 @@ export const getFCMToken = async () => {
 };
 
 // Register background handler
-export const setupBackgroundHandler = () => {
+export const setupBackgroundHandler = (): void => {
+  if (Platform.OS === "web") {
+    return;
+  }
+
   // Register background handler
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
     console.log("Message handled in the background:", remoteMessage);
@@ -83,6 +114,8 @@ export const setupBackgroundHandler = () => {
             remoteMessage.notification?.body ||
             "Your filtered image is ready. Tap to view.",
           data: { dataKey },
+          // Specify Android channel
+          ...(Platform.OS === "android" ? { channelId: "image-processing" } : {}),
         },
         trigger: null,
       });
@@ -91,19 +124,23 @@ export const setupBackgroundHandler = () => {
 };
 
 // Store data for later retrieval via notifications
-export const storeNotificationData = (key: string, data: any) => {
+export const storeNotificationData = (key: string, data: any): string => {
   notificationData[key] = data;
   console.log(`Stored notification data with key: ${key}`);
   return key;
 };
 
 // Retrieve stored notification data
-export const getNotificationData = (key: string) => {
+export const getNotificationData = (key: string): any => {
   return notificationData[key];
 };
 
 // Setup notification handlers
-export const setupNotificationHandlers = () => {
+export const setupNotificationHandlers = (): void => {
+  if (Platform.OS === "web") {
+    return;
+  }
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -114,38 +151,69 @@ export const setupNotificationHandlers = () => {
 };
 
 // Create Android notification channels
-export const createNotificationChannels = async () => {
+export const createNotificationChannels = async (): Promise<void> => {
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("image-processing", {
-      name: "Image Processing",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#FF231F7C",
-      sound: "default",
-      enableLights: true,
-      enableVibrate: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      showBadge: true,
-    });
+    try {
+      // Main channel for image processing notifications
+      await Notifications.setNotificationChannelAsync("image-processing", {
+        name: "Image Processing",
+        description: "Notifications for image processing status and results",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#3B82F6", // Blue color that matches your app theme
+        sound: "default", // Use default sound
+        enableLights: true,
+        enableVibrate: true,
+        lockscreenVisibility:
+          Notifications.AndroidNotificationVisibility.PUBLIC,
+        showBadge: true,
+      });
+
+      // Status update channel (for process updates)
+      await Notifications.setNotificationChannelAsync("status-updates", {
+        name: "Status Updates",
+        description: "Updates about image processing progress",
+        importance: Notifications.AndroidImportance.DEFAULT, // Less intrusive
+        vibrationPattern: [0, 100],
+        enableLights: false,
+        enableVibrate: true,
+        lockscreenVisibility:
+          Notifications.AndroidNotificationVisibility.PRIVATE,
+        showBadge: false,
+      });
+
+      console.log("Android notification channels created successfully");
+    } catch (error) {
+      console.error("Error creating notification channels:", error);
+    }
   }
 };
 
-// Show a local notification (for backward compatibility)
 export const showLocalNotification = async (
   title: string,
   body: string,
-  data: any = {}
-) => {
+  data: any = {},
+  channelId: string = "image-processing" // Default channel
+): Promise<boolean> => {
+  if (Platform.OS === "web") {
+    console.log("Notifications not available on web");
+    return false;
+  }
+
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
         data,
+        // Specify Android channel
+        ...(Platform.OS === "android" ? { channelId } : {}),
       },
       trigger: null,
     });
-    console.log(`Local notification scheduled: ${title}`);
+    console.log(
+      `Local notification scheduled: ${title} on channel ${channelId}`
+    );
     return true;
   } catch (error) {
     console.error("Error showing notification:", error);
@@ -153,12 +221,17 @@ export const showLocalNotification = async (
   }
 };
 
-// Send an image ready notification
+// Also update showImageReadyNotification to specify the channel
 export const showImageReadyNotification = async (
   title: string,
   body: string,
-  imageUrl: string
-) => {
+  imageUrl: string,
+  channelId: string = "image-processing"
+): Promise<boolean> => {
+  if (Platform.OS === "web") {
+    return false;
+  }
+
   try {
     // Create a data key to store the image URL
     const dataKey = `img_${Date.now()}`;
@@ -170,11 +243,15 @@ export const showImageReadyNotification = async (
         title,
         body,
         data: { dataKey, notificationType: "image_ready" },
+        // Specify Android channel
+        ...(Platform.OS === "android" ? { channelId } : {}),
       },
       trigger: null,
     });
 
-    console.log(`Image ready notification scheduled: ${title}`);
+    console.log(
+      `Image ready notification scheduled: ${title} on channel ${channelId}`
+    );
     return true;
   } catch (error) {
     console.error("Error showing image ready notification:", error);

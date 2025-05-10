@@ -149,17 +149,6 @@ export default function UploadScreen() {
       let fcmToken = null;
       if (Platform.OS !== "web") {
         try {
-          fcmToken = await getFCMToken();
-        } catch (error) {
-          console.log(
-            "Could not get FCM token, continuing without notifications"
-          );
-        }
-      }
-
-      // Show processing notification with basic options - only for native platforms
-      if (Platform.OS !== "web") {
-        try {
           await Notifications.scheduleNotificationAsync({
             content: {
               title: `AI Filter: ${filter}`,
@@ -168,12 +157,24 @@ export default function UploadScreen() {
                 notificationType: "processing",
                 filterType: filter,
               },
+              // Specify the correct channel ID for Android
+              ...(Platform.OS === "android"
+                ? { channelId: "status-updates" }
+                : {}),
             },
             trigger: null,
           });
         } catch (error) {
           console.log("Could not schedule notification, continuing without it");
         }
+      }
+
+      // Show processing notification
+      if (Platform.OS !== "web" && fcmToken) {
+        await showLocalNotification(
+          `AI Filter: ${filter}`,
+          `Processing your image with the ${filter} filter. This may take a moment...`
+        );
       }
 
       // Log the filter being applied
