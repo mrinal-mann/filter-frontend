@@ -1,7 +1,15 @@
+/**
+ * Authentication Service
+ * Handles token retrieval from the auth service
+ */
 import messaging from '@react-native-firebase/messaging';
 import { Platform } from 'react-native';
 
 const AUTH_SERVICE_URL = 'https://gcloud-authentication-493914627855.us-central1.run.app';
+
+// Token caching to improve performance and reduce API calls
+let cachedToken: string | null = null;
+let tokenExpiry: number | null = null;
 
 /**
  * Gets a Cloud Run token from the auth service
@@ -16,10 +24,6 @@ export async function getCloudRunToken(): Promise<string> {
     if (Platform.OS !== "web") {
       try {
         fcmToken = await messaging().getToken();
-        console.log(
-          "FCM token for auth request:",
-          fcmToken ? "Retrieved" : "Not available"
-        );
       } catch (err) {
         console.log('Could not get FCM token for auth request');
       }
@@ -45,17 +49,12 @@ export async function getCloudRunToken(): Promise<string> {
     }
     
     const data = await response.json();
-    console.log('Successfully retrieved token');
     return data.token;
   } catch (error) {
     console.error('Error getting Cloud Run token:', error);
     throw new Error('Authentication failed. Please try again later.');
   }
 }
-
-// Token caching to improve performance and reduce API calls
-let cachedToken: string | null = null;
-let tokenExpiry: number | null = null;
 
 /**
  * Gets a token, using cache if available

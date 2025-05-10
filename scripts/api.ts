@@ -1,15 +1,21 @@
+/**
+ * API Service
+ * Handles communication with the filter backend
+ */
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getCachedCloudRunToken } from "../services/authService";
+import * as Notifications from "expo-notifications";
 
 // Key for storing custom server IP
 const SERVER_IP_KEY = "filter_app_server_ip";
 
 // URLs for deployed Cloud Run service
-const CLOUD_RUN_URL =
-  "https://filter-backend-493914627855.us-central1.run.app/generate";
+const CLOUD_RUN_URL = "https://filter-backend-493914627855.us-central1.run.app/generate";
 
-// Function to get server URL
+/**
+ * Get the server URL to use (production or development)
+ */
 export const getServerUrl = async (): Promise<string> => {
   // Default URL is the Cloud Run service
   let serverUrl = CLOUD_RUN_URL;
@@ -33,7 +39,9 @@ export const getServerUrl = async (): Promise<string> => {
   return serverUrl;
 };
 
-// Function to save a custom server IP (for development)
+/**
+ * Save a custom server IP (for development)
+ */
 export const saveServerIp = async (ip: string): Promise<void> => {
   try {
     await AsyncStorage.setItem(SERVER_IP_KEY, ip);
@@ -45,12 +53,11 @@ export const saveServerIp = async (ip: string): Promise<void> => {
 };
 
 /**
- * Main function to generate an image using the server API
+ * Generate a filtered image using the backend API
  */
 export const generateImage = async (
   imageUri: string,
   filter: string,
-  fcmToken?: string
 ): Promise<string> => {
   try {
     console.log(`Processing image with filter: ${filter}`);
@@ -68,6 +75,17 @@ export const generateImage = async (
 
     // Get the server URL
     const serverUrl = await getServerUrl();
+
+    // Get FCM token for notifications
+    let fcmToken = null;
+    try {
+      if (Platform.OS !== "web") {
+        fcmToken = await Notifications.getDevicePushTokenAsync();
+        console.log("Got FCM token for request:", fcmToken.data ? "Yes" : "No");
+      }
+    } catch (error) {
+      console.log("Could not get FCM token:", error);
+    }
 
     // Handle image data differently based on platform
     if (
@@ -107,27 +125,25 @@ export const generateImage = async (
     formData.append("filter", filter);
 
     // Add FCM token if available
-    if (fcmToken) {
-      formData.append("fcmToken", fcmToken);
+    if (fcmToken && fcmToken.data) {
+      formData.append("fcmToken", fcmToken.data);
       console.log("Added FCM token to request");
     }
-
-    // Send the request with timeout
-    console.log("Sending request to API server...");
 
     // Create AbortController for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
     try {
+      // Send the request with timeout
+      console.log("Sending request to API server...");
       const apiResponse = await fetch(serverUrl, {
         method: "POST",
         body: formData,
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${authToken}`, // Use the token from auth service
+          Authorization: `Bearer ${authToken}`,
         },
-        mode: "cors",
         signal: controller.signal,
       });
 
@@ -173,56 +189,12 @@ export const generateImage = async (
     if (error.message) {
       if (error.message.includes("Network request failed")) {
         errorMsg =
-          "Network error. Please check your connection and ensure the server is running at the correct address.";
+          "Network error. Please check your connection and ensure the server is running.";
       } else {
         errorMsg = error.message;
       }
     }
 
     throw new Error(errorMsg);
-  }
-};
-
-/**
- * Helper function to test the server connection
- */
-export const testServerConnection = async (): Promise<boolean> => {
-  try {
-    const serverUrl = await getServerUrl();
-    const healthUrl = serverUrl.replace("/generate", "/health");
-
-    // Create AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-    try {
-      const response = await fetch(healthUrl, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        console.log("Server connection test successful");
-        return true;
-      } else {
-        console.error("Server connection test failed:", response.status);
-        return false;
-      }
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-
-      if (fetchError.name === "AbortError") {
-        console.error("Server connection test timed out");
-      }
-      return false;
-    }
-  } catch (error) {
-    console.error("Server connection test error:", error);
-    return false;
   }
 };
