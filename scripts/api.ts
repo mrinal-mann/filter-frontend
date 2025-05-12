@@ -11,7 +11,7 @@ import * as Notifications from "expo-notifications";
 const SERVER_IP_KEY = "filter_app_server_ip";
 
 // URLs for deployed Cloud Run service
-const CLOUD_RUN_URL = "https://filter-backend-493914627855.us-central1.run.app/generate";
+const CLOUD_RUN_URL = "http://localhost:3000/generate";
 
 /**
  * Get the server URL to use (production or development)

@@ -5,7 +5,7 @@
 import messaging from "@react-native-firebase/messaging";
 import { Platform } from "react-native";
 
-const AUTH_SERVICE_URL = "https://gcloud-authentication-493914627855.us-central1.run.app";
+const AUTH_SERVICE_URL = "http://localhost:4000";
 
 // Token caching to improve performance and reduce API calls
 let cachedToken: string | null = null;
@@ -33,27 +33,23 @@ export async function getCloudRunToken(): Promise<string> {
       }
     }
 
-    // Add FCM token to URL if available
-    const tokenEndpoint = fcmToken
-      ? `${AUTH_SERVICE_URL}/auth/public-token?fcmToken=${encodeURIComponent(
-          fcmToken
-        )}`
-      : `${AUTH_SERVICE_URL}/auth/public-token`;
-
+    // Request public token
+    const tokenEndpoint = `${AUTH_SERVICE_URL}/auth/public-token`;
     console.log("Requesting from endpoint:", tokenEndpoint);
 
-    // Request a token from the public endpoint
+    // Request a token from the public endpoint with proper headers
     const response = await fetch(tokenEndpoint, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        "Accept": "application/json",
       },
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Auth service error:", errorText);
-      throw new Error(`Failed to get token: ${response.status}`);
+      throw new Error(`Failed to get token: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
