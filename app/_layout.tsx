@@ -8,19 +8,18 @@ import { useFonts } from "expo-font";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import "react-native-reanimated";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
-import messaging from "@react-native-firebase/messaging";
 import {
   getNotificationData,
   setupNotifications,
 } from "@/utils/notificationHelper";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { initializeFirebase } from "@/utils/firebaseInit";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { initializeFirebase } from "@/utils/firebaseInit";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -28,6 +27,7 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
 
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
@@ -36,45 +36,30 @@ export default function RootLayout() {
   // Setup notification handling
   useEffect(() => {
     async function initializeApp() {
-      // Initialize Firebase (only on native platforms)
-      if (Platform.OS !== "web") {
+      try {
+        // Initialize Firebase first
         await initializeFirebase();
-      }
 
-      // Setup notifications and request permissions
-      await setupNotifications();
+        // Get or create user ID
+        let storedUserId = await AsyncStorage.getItem("user_id");
+        if (!storedUserId) {
+          // Generate a simple user ID for demo purposes
+          storedUserId = `user_${Date.now()}`;
+          await AsyncStorage.setItem("user_id", storedUserId);
+        }
+        setUserId(storedUserId);
+
+        // Setup notifications and register device
+        const success = await setupNotifications(storedUserId);
+        if (success) {
+          console.log("Notifications initialized successfully");
+        }
+      } catch (error) {
+        console.error("Error initializing app:", error);
+      }
     }
 
     initializeApp();
-
-    // Check if app was opened from a notification when closed
-    const checkInitialNotification = async () => {
-      try {
-        const initialNotification = await messaging().getInitialNotification();
-        if (initialNotification) {
-          console.log(
-            "App opened from quit state by notification:",
-            initialNotification
-          );
-
-          // Handle the notification data
-          const data = initialNotification.data;
-          if (data?.imageUrl) {
-            router.push({
-              pathname: "/result",
-              params: { imageUrl: data.imageUrl as any },
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Error checking initial notification:", error);
-      }
-    };
-
-    // Only run on native platforms
-    if (Platform.OS !== "web") {
-      checkInitialNotification();
-    }
 
     // Set up notification tap handler
     const subscription = Notifications.addNotificationResponseReceivedListener(

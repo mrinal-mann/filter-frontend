@@ -1,5 +1,5 @@
 /**
- * Notification Helper
+ * Enhanced Notification Helper
  * Central place for handling FCM notifications in the mobile app
  */
 import * as Notifications from "expo-notifications";
@@ -10,18 +10,22 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // Storage keys
 const NOTIFICATION_DATA_PREFIX = "notification_data_";
 const FCM_TOKEN_KEY = "fcm_token";
+const USER_ID_KEY = "user_id";
+
+// Your backend URL
+const BACKEND_URL = "https://filter-backend-493914627855.us-central1.run.app";
+
 /**
  * Creates Android notification channels
  */
 export async function createNotificationChannels(): Promise<void> {
   if (Platform.OS === "android") {
-    // Main notification channel for image processing results
     await Notifications.setNotificationChannelAsync("image-processing", {
       name: "Image Processing",
       description: "Notifications for image processing status and results",
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#3B82F6", // Blue color that matches app theme
+      lightColor: "#3B82F6",
       sound: "default",
       enableLights: true,
       enableVibrate: true,
@@ -29,7 +33,6 @@ export async function createNotificationChannels(): Promise<void> {
       showBadge: true,
     });
 
-    // Secondary channel for status updates (less intrusive)
     await Notifications.setNotificationChannelAsync("status-updates", {
       name: "Status Updates",
       description: "Updates about image processing progress",
@@ -57,13 +60,12 @@ export function setupNotificationHandlers(): void {
 }
 
 /**
- * Get the FCM token for this device using Expo's API
+ * Get the FCM token for this device
  */
 export async function getFCMToken(): Promise<string | null> {
   if (Platform.OS === "web") return null;
 
   try {
-    // Use Expo's getDevicePushTokenAsync - this gets FCM token on Android and APNs on iOS
     const deviceToken = await Notifications.getDevicePushTokenAsync();
     
     // Cache the token
@@ -88,78 +90,49 @@ export async function getFCMToken(): Promise<string | null> {
 /**
  * Register device token with backend
  */
-export async function registerDeviceWithBackend(token: string): Promise<boolean> {
+export async function registerDeviceToken(userId: string): Promise<boolean> {
   try {
-    const response = await fetch(
-      "https://filter-backend-493914627855.us-central1.run.app/register-device",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          deviceToken: token,
-          platform: Platform.OS,
-        }),
-      }
-    );
+    const fcmToken = await getFCMToken();
+    if (!fcmToken) {
+      console.error("No FCM token available");
+      return false;
+    }
+
+    const response = await fetch(`${BACKEND_URL}/register-token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId,
+        fcmToken,
+        platform: Platform.OS,
+      }),
+    });
 
     if (!response.ok) {
-      throw new Error("Failed to register device");
+      throw new Error("Failed to register device token");
     }
     
-    console.log("Device registered successfully with backend");
+    // Store user ID locally
+    await AsyncStorage.setItem(USER_ID_KEY, userId);
+    
+    console.log("Device token registered successfully");
     return true;
   } catch (error) {
-    console.error("Error registering device:", error);
+    console.error("Error registering device token:", error);
     return false;
   }
 }
 
 /**
- * Sets up notification handler for the app
- * Should be called once during app initialization
- */
-export async function setupNotifications(): Promise<boolean> {
-  try {
-    // Create notification channels for Android
-    if (Platform.OS === "android") {
-      await createNotificationChannels();
-    }
-
-    // Set up handlers
-    setupNotificationHandlers();
-    setupBackgroundHandler(); // Remove Firebase-specific handling here
-
-    // Request permissions
-    const hasPermission = await requestFCMPermissions();
-    
-    if (hasPermission) {
-      // Get token using Expo's API
-      const token = await getFCMToken();
-      if (token) {
-        // Register with backend
-        await registerDeviceWithBackend(token);
-        return true;
-      }
-    }
-    
-    return false;
-  } catch (error) {
-    console.error("Error setting up notifications:", error);
-    return false;
-  }
-}
-
-/**
- * Request notification permissions (works for both iOS and Android)
+ * Request notification permissions
  */
 export async function requestFCMPermissions(): Promise<boolean> {
   if (Platform.OS === "web") return false;
   if (!Device.isDevice) return false;
 
   try {
-    // Use Expo's permission API
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     
@@ -176,13 +149,85 @@ export async function requestFCMPermissions(): Promise<boolean> {
 }
 
 /**
- * Set up background message handler
- * Note: Remove Firebase-specific background handler since Expo handles this
+ * Setup everything needed for notifications
  */
+export async function setupNotifications(userId?: string): Promise<boolean> {
+  try {
+    // Create notification channels for Android
+    if (Platform.OS === "android") {
+      await createNotificationChannels();
+    }
+
+    // Set up handlers
+    setupNotificationHandlers();
+
+    // Request permissions
+    const hasPermission = await requestFCMPermissions();
+    
+    if (hasPermission) {
+      // Get token using Expo's API
+      const token = await getFCMToken();
+      if (token) {
+        // If userId provided, register with backend
+        if (userId) {
+          await registerDeviceToken(userId);
+        }
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("Error setting up notifications:", error);
+    return false;
+  }
+}
+
+// Export other existing functions...
 export function setupBackgroundHandler(): void {
   if (Platform.OS === "web") return;
-
-  // Expo handles background notifications automatically
-  // Just ensure your notification handlers are set up
   console.log("Background notification handling configured via Expo");
+}
+
+export async function showLocalNotification(
+  title: string,
+  body: string,
+  data?: any
+): Promise<boolean> {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data,
+        sound: true,
+      },
+      trigger: null,
+    });
+    return true;
+  } catch (error) {
+    console.error("Error showing local notification:", error);
+    return false;
+  }
+}
+
+// Keep existing functions for storing/getting notification data
+export function storeNotificationData(key: string, data: any): string {
+  const fullKey = `${NOTIFICATION_DATA_PREFIX}${key}`;
+  try {
+    AsyncStorage.setItem(fullKey, JSON.stringify(data));
+  } catch (error) {
+    console.error("Error storing notification data:", error);
+  }
+  return fullKey;
+}
+
+export async function getNotificationData(key: string): Promise<any> {
+  try {
+    const data = await AsyncStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error("Error getting notification data:", error);
+    return null;
+  }
 }
