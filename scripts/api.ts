@@ -57,7 +57,7 @@ export const saveServerIp = async (ip: string): Promise<void> => {
  */
 export const generateImage = async (
   imageUri: string,
-  filter: string,
+  filter: string
 ): Promise<string> => {
   try {
     console.log(`Processing image with filter: ${filter}`);
@@ -68,7 +68,10 @@ export const generateImage = async (
 
     // Get authentication token from our auth service
     const authToken = await getCachedCloudRunToken();
-    console.log("Got authentication token for request");
+    console.log(
+      "Got authentication token for request (first 20 chars):",
+      authToken.substring(0, 20) + "..."
+    );
 
     // Create form data for the API request
     const formData = new FormData();
@@ -136,7 +139,12 @@ export const generateImage = async (
 
     try {
       // Send the request with timeout
-      console.log("Sending request to API server...");
+      console.log("Sending request to API server with auth token...");
+      console.log(
+        "Authorization header:",
+        `Bearer ${authToken.substring(0, 10)}...`
+      );
+
       const apiResponse = await fetch(serverUrl, {
         method: "POST",
         body: formData,

@@ -78,7 +78,7 @@ export default function RootLayout() {
 
     // Set up notification tap handler
     const subscription = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
+      async (response) => {
         try {
           console.log("Notification tapped:", response);
 
@@ -113,34 +113,6 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
     };
-  }, [router]);
-
-
-  // Check if the app was opened from a notification when it was closed
-  useEffect(() => {
-    const checkInitialNotification = async () => {
-      try {
-        // Get initial notification that opened the app
-        const initialNotification = await messaging().getInitialNotification();
-        if (initialNotification) {
-          console.log(
-            "App opened from quit state by notification:",
-            initialNotification
-          );
-          // Handle the notification data similar to how you handle tapped notifications
-          const data = initialNotification.data;
-          if (data?.imageUrl) {
-            router.push({
-              pathname: "/result",
-              params: { imageUrl: data.imageUrl as any },
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Error checking initial notification:", error);
-      }
-    };
-    checkInitialNotification();
   }, [router]);
 
   useEffect(() => {

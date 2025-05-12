@@ -19,7 +19,6 @@ import {
   setupNotifications,
   showLocalNotification,
   requestFCMPermissions,
-  getFCMToken,
   getNotificationData,
 } from "@/utils/notificationHelper";
 
@@ -51,7 +50,7 @@ export default function UploadScreen() {
 
     // This listener is fired whenever a user taps on a notification
     notificationResponseRef.current =
-      Notifications.addNotificationResponseReceivedListener((response) => {
+      Notifications.addNotificationResponseReceivedListener(async (response) => {
         try {
           console.log("Notification tapped:", response);
 
@@ -61,7 +60,7 @@ export default function UploadScreen() {
           // Check if we have a dataKey (for stored image URL)
           if (data?.dataKey) {
             // Retrieve the stored data using the key
-            const storedData = getNotificationData(data.dataKey);
+            const storedData = await getNotificationData(data.dataKey);
             if (storedData?.imageUrl) {
               // Navigate to result screen when notification is tapped
               router.push({
@@ -185,7 +184,6 @@ export default function UploadScreen() {
       const result = await generateImage(
         imageUri,
         String(filter),
-        fcmToken || undefined
       );
 
       // Navigate to results screen
